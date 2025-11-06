@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Test MediaPipe</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        video {
+            width: 100%;
+            max-width: 640px;
+            border: 2px solid #333;
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        .container {
+            position: relative;
+            display: inline-block;
+        }
+        button {
+            margin: 10px 5px;
+            padding: 10px 20px;
+            font-size: 16px;
+        }
+        #status {
+            margin: 20px 0;
+            padding: 10px;
+            background: #f0f0f0;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test MediaPipe Face Mesh + Iris</h1>
+    <div id="status">Status: Initializing...</div>
+    
+    <div class="container">
+        <video id="video" autoplay playsinline></video>
+        <canvas id="canvas"></canvas>
+    </div>
+    
+    <div>
+        <button onclick="start()">Start</button>
+        <button onclick="stop()">Stop</button>
+    </div>
+
+    <div id="info">
+        <p>FPS: <span id="fps">0</span></p>
+        <p>Faces detected: <span id="faces">0</span></p>
+        <p>Iris landmarks: <span id="iris">-</span></p>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const statusDiv = document.getElementById('status');
+
+        let faceMesh;
+        let camera;
+        let running = false;
+
+        // Iris indices
+        const LEFT_IRIS = [469, 470, 471, 472];
+        const RIGHT_IRIS = [474, 475, 476, 477];
+
+        // FPS tracking
+        let frameCount = 0;
+        let lastTime = Date.now();
+
+        async function init() {
+            statusDiv.textContent = 'Status: Loading MediaPipe...';
+            
+            try {
+                faceMesh = new FaceMesh({
+                    locateFile: (file) => {
+                        return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+                    }
+                });
+
+                faceMesh.setOptions({
+                    maxNumFaces: 1,
+                    refineLandmarks: true,
+                    minDetectionConfidence: 0.5,
+                    minTrackingConfidence: 0.5
+                });
+
+                faceMesh.onResults(onResults);
+
+                statusDiv.textContent = 'Status: Ready! Click Start';
+            } catch (error) {
+                statusDiv.textContent = 'Status: Error - ' + error.message;
+                console.error(error);
+            }
+        }
+
+        async function start() {
+            if (running) return;
+
+            try {
+                statusDiv.textContent = 'Status: Starting camera...';
+
+                camera = new Camera(video, {
+                    onFrame: async () => {
+                        await faceMesh.send({ image: video });
+                    },
+                    width: 640,
+                    height: 480
+                });
+
+                await camera.start();
+                running = true;
+                statusDiv.textContent = 'Status: Running';
+            } catch (error) {
+                statusDiv.textContent = 'Status: Camera error - ' + error.message;
+                console.error(error);
+            }
+        }
+
+        function stop() {
+            if (!running) return;
+            
+            if (camera) {
+                camera.stop();
+            }
+            running = false;
+            statusDiv.textContent = 'Status: Stopped';
+        }
+
+        function onResults(results) {
+            // Update FPS
+            frameCount++;
+            const now = Date.now();
+            if (now - lastTime >= 1000) {
+                document.getElementById('fps').textContent = frameCount;
+                frameCount = 0;
+                lastTime = now;
+            }
+
+            // Setup canvas
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            ctx.save();
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw results
+            if (results.multiFaceLandmarks) {
+                document.getElementById('faces').textContent = results.multiFaceLandmarks.length;
+
+                for (const landmarks of results.multiFaceLandmarks) {
+                    // Draw face mesh
+                    drawConnectors(ctx, landmarks, FACEMESH_TESSELATION, {
+                        color: '#C0C0C070',
+                        lineWidth: 1
+                    });
+
+                    // Draw iris
+                    const leftIris = LEFT_IRIS.map(i => landmarks[i]);
+                    const rightIris = RIGHT_IRIS.map(i => landmarks[i]);
+
+                    // Draw left iris
+                    ctx.fillStyle = '#FF0000';
+                    leftIris.forEach(lm => {
+                        ctx.beginPath();
+                        ctx.arc(lm.x * canvas.width, lm.y * canvas.height, 3, 0, 2 * Math.PI);
+                        ctx.fill();
+                    });
+
+                    // Draw right iris
+                    rightIris.forEach(lm => {
+                        ctx.beginPath();
+                        ctx.arc(lm.x * canvas.width, lm.y * canvas.height, 3, 0, 2 * Math.PI);
+                        ctx.fill();
+                    });
+
+                    // Calculate iris centers
+                    const leftCenter = {
+                        x: leftIris.reduce((s, lm) => s + lm.x, 0) / leftIris.length,
+                        y: leftIris.reduce((s, lm) => s + lm.y, 0) / leftIris.length
+                    };
+                    const rightCenter = {
+                        x: rightIris.reduce((s, lm) => s + lm.x, 0) / rightIris.length,
+                        y: rightIris.reduce((s, lm) => s + lm.y, 0) / rightIris.length
+                    };
+
+                    // Draw centers
+                    ctx.fillStyle = '#00FF00';
+                    ctx.beginPath();
+                    ctx.arc(leftCenter.x * canvas.width, leftCenter.y * canvas.height, 5, 0, 2 * Math.PI);
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(rightCenter.x * canvas.width, rightCenter.y * canvas.height, 5, 0, 2 * Math.PI);
+                    ctx.fill();
+
+                    document.getElementById('iris').textContent = 
+                        `Left: (${(leftCenter.x * 100).toFixed(1)}%, ${(leftCenter.y * 100).toFixed(1)}%) ` +
+                        `Right: (${(rightCenter.x * 100).toFixed(1)}%, ${(rightCenter.y * 100).toFixed(1)}%)`;
+                }
+            } else {
+                document.getElementById('faces').textContent = '0';
+                document.getElementById('iris').textContent = '-';
+            }
+
+            ctx.restore();
+        }
+
+        // Initialize on load
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>
