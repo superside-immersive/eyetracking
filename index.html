@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Advanced Iris Tracking - MediaPipe</title>
+    <title>Eye Gymnastics</title>
     <style>
         * {
             margin: 0;
@@ -12,61 +12,106 @@
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Helvetica', 'Arial', sans-serif;
+            background: #000;
+            color: #fff;
+            overflow: hidden;
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* Landing Screen */
+        .landing-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            background: #000;
+            transition: opacity 1s ease-in-out;
+        }
+
+        .landing-screen.fade-out {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .landing-title {
+            font-size: 3em;
+            font-weight: 300;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.3em;
+            text-align: center;
+        }
+
+        .landing-subtitle {
+            font-size: 1.2em;
+            font-weight: 400;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 3em;
+            opacity: 0.7;
+        }
+
+        .start-button {
+            background: transparent;
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 15px 40px;
+            font-size: 0.9em;
+            font-weight: 400;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-family: 'Helvetica', 'Arial', sans-serif;
+        }
+
+        .start-button:hover {
+            border-color: #fff;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        /* Main Content */
+        .app-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 1s ease-in-out;
+        }
+
+        .app-container.visible {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        /* Eye Tracking Canvas */
+        .tracking-container {
+            flex: 1;
+            position: relative;
             display: flex;
             justify-content: center;
             align-items: center;
-            min-height: 100vh;
-            padding: 20px;
-        }
-
-        .container {
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 20px;
-            padding: 30px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            max-width: 1400px;
-            width: 100%;
-        }
-
-        h1 {
-            text-align: center;
-            color: #333;
-            margin-bottom: 10px;
-            font-size: 2.5em;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .subtitle {
-            text-align: center;
-            color: #666;
-            margin-bottom: 30px;
-            font-size: 1.1em;
-        }
-
-        .main-content {
-            display: grid;
-            grid-template-columns: 1fr 350px;
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-
-        .video-container {
-            position: relative;
-            background: #000;
-            border-radius: 15px;
-            overflow: hidden;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
         }
 
         #videoElement {
+            position: absolute;
             width: 100%;
-            height: auto;
-            display: block;
+            height: 100%;
+            object-fit: cover;
             transform: scaleX(-1);
+            opacity: 0;
         }
 
         #canvasElement {
@@ -76,277 +121,306 @@
             width: 100%;
             height: 100%;
             transform: scaleX(-1);
+            z-index: 10;
         }
 
-        .controls {
+        /* Gaze Pointer */
+        .gaze-pointer {
+            position: fixed;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: rgba(0, 120, 255, 0.6);
+            border: 2px solid rgba(0, 150, 255, 0.9);
+            pointer-events: none;
+            z-index: 100;
+            transform: translate(-50%, -50%);
+            transition: all 0.1s ease-out;
+            box-shadow: 0 0 20px rgba(0, 120, 255, 0.8);
+            opacity: 0;
+        }
+
+        .gaze-pointer.visible {
+            opacity: 1;
+        }
+
+        /* Dashboard */
+        .dashboard {
+            width: 320px;
+            background: #000;
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 40px 30px;
             display: flex;
-            justify-content: center;
-            gap: 15px;
-            flex-wrap: wrap;
+            flex-direction: column;
+            gap: 30px;
+            opacity: 0;
+            transition: opacity 0.8s ease-in-out;
         }
 
-        button {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            padding: 12px 30px;
-            border-radius: 25px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: 600;
-            transition: transform 0.2s, box-shadow 0.2s;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        .dashboard.visible {
+            opacity: 1;
         }
 
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        .stat-group {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 20px;
         }
 
-        button:active {
-            transform: translateY(0);
-        }
-
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .stats-panel {
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-            border-radius: 15px;
-            padding: 20px;
-            height: fit-content;
-        }
-
-        .stat-item {
-            background: white;
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 12px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        .stat-group:last-child {
+            border-bottom: none;
         }
 
         .stat-label {
-            font-size: 0.85em;
-            color: #666;
-            font-weight: 600;
+            font-size: 0.7em;
+            font-weight: 400;
+            letter-spacing: 0.15em;
             text-transform: uppercase;
-            margin-bottom: 5px;
+            opacity: 0.5;
+            margin-bottom: 8px;
         }
 
         .stat-value {
-            font-size: 1.5em;
-            color: #333;
-            font-weight: bold;
-        }
-
-        .gaze-indicator {
-            width: 100%;
-            height: 150px;
-            background: white;
-            border-radius: 10px;
-            position: relative;
-            border: 2px solid #667eea;
-            margin-top: 15px;
-        }
-
-        .gaze-point {
-            width: 12px;
-            height: 12px;
-            background: #667eea;
-            border-radius: 50%;
-            position: absolute;
-            transform: translate(-50%, -50%);
-            box-shadow: 0 0 10px rgba(102, 126, 234, 0.8);
-            transition: all 0.1s ease-out;
+            font-size: 2em;
+            font-weight: 300;
+            letter-spacing: 0.02em;
         }
 
         .ear-chart {
             width: 100%;
-            height: 100px;
-            background: white;
-            border-radius: 10px;
-            margin-top: 15px;
+            height: 80px;
+            margin-top: 10px;
             position: relative;
-            overflow: hidden;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
         #earCanvas {
             width: 100%;
             height: 100%;
+            display: block;
         }
 
-        .status-indicator {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            margin-right: 8px;
-        }
-
-        .status-active {
-            background: #4CAF50;
-            box-shadow: 0 0 10px rgba(76, 175, 80, 0.6);
-        }
-
-        .status-inactive {
-            background: #f44336;
-        }
-
-        .blink-alert {
-            position: absolute;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(255, 0, 0, 0.8);
-            color: white;
-            padding: 15px 30px;
-            border-radius: 10px;
-            font-size: 1.5em;
-            font-weight: bold;
-            display: none;
-            animation: pulse 0.5s ease-in-out;
-            z-index: 10;
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        .feature-list {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-top: 20px;
-        }
-
-        .feature-item {
-            background: rgba(102, 126, 234, 0.1);
-            padding: 15px;
-            border-radius: 10px;
-            text-align: center;
-            border: 2px solid rgba(102, 126, 234, 0.3);
-        }
-
-        .feature-icon {
-            font-size: 2em;
-            margin-bottom: 10px;
-        }
-
-        .feature-title {
-            font-weight: 600;
-            color: #333;
-        }
-
-        @media (max-width: 1024px) {
-            .main-content {
-                grid-template-columns: 1fr;
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
             }
         }
 
-        .loading {
+        /* Instructions Overlay */
+        .instructions-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 5000;
+            background: rgba(0, 0, 0, 0.92);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.8s ease-in-out;
+        }
+
+        .instructions-overlay.visible {
+            opacity: 1;
+        }
+
+        .instruction-text {
+            font-size: 3.5em;
+            font-weight: 400;
+            letter-spacing: 0.2em;
             text-align: center;
-            padding: 20px;
-            color: #666;
+            max-width: 80%;
+            line-height: 1.8;
+            text-transform: uppercase;
         }
 
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 20px auto;
+        .instruction-action {
+            font-size: 1.8em;
+            font-weight: 300;
+            letter-spacing: 0.25em;
+            text-transform: uppercase;
+            opacity: 0.5;
+            margin-top: 30px;
         }
 
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        /* Final Message */
+        .final-message {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 6000;
+            background: rgba(0, 0, 0, 0.88);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 1.5s ease-in-out;
+            padding: 60px;
+        }
+
+        .final-message.visible {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .message-line {
+            opacity: 0;
+            transition: opacity 1.5s ease-in-out;
+        }
+
+        .message-line.visible {
+            opacity: 1;
+        }
+
+        .message-header {
+            font-size: 2.5em;
+            font-weight: 300;
+            letter-spacing: 0.15em;
+            text-transform: lowercase;
+            margin-bottom: 60px;
+        }
+
+        .message-body {
+            font-size: 1.2em;
+            font-weight: 300;
+            letter-spacing: 0.08em;
+            line-height: 1.8;
+            max-width: 800px;
+            text-align: center;
+            margin-bottom: 50px;
+        }
+
+        .message-cta {
+            font-size: 1em;
+            font-weight: 400;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            padding: 15px 40px;
+            cursor: pointer;
+            text-decoration: none;
+            color: #fff;
+            display: inline-block;
+            margin-top: 20px;
+        }
+
+        .message-cta.visible {
+            border-color: rgba(255, 255, 255, 0.6);
+        }
+
+        .message-cta:hover {
+            border-color: #fff !important;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        /* Circle Trail Canvas */
+        #circleTrailCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        /* White Flash Effect */
+        .flash-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: white;
+            opacity: 0;
+            pointer-events: none;
+            z-index: 10000;
+            transition: opacity 0.2s ease-out;
+        }
+
+        .flash-overlay.active {
+            opacity: 1;
+        }
+
+        @keyframes flash {
+            0% { opacity: 0; }
+            50% { opacity: 1; }
+            100% { opacity: 0; }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>👁️ Advanced Iris Tracking</h1>
-        <p class="subtitle">Seguimiento avanzado de iris con MediaPipe Face Mesh</p>
+    <!-- Landing Screen -->
+    <div class="landing-screen" id="landingScreen">
+        <div class="landing-title">ready to train your eyes?</div>
+        <div class="landing-subtitle">eye gymnastics</div>
+        <button class="start-button" onclick="startExperience()">click to start</button>
+    </div>
 
-        <div class="main-content">
-            <div class="video-container">
-                <video id="videoElement" autoplay playsinline></video>
-                <canvas id="canvasElement"></canvas>
-                <div id="blinkAlert" class="blink-alert">PARPADEO DETECTADO</div>
+    <!-- White Flash Overlay -->
+    <div class="flash-overlay" id="flashOverlay"></div>
+
+    <!-- Instructions Overlay -->
+    <div class="instructions-overlay" id="instructionsOverlay">
+        <div class="instruction-text" id="instructionText">LOOK LEFT</div>
+        <div class="instruction-action" id="instructionAction"></div>
+    </div>
+    
+    <!-- Final Message -->
+    <div class="final-message" id="finalMessage">
+        <div class="message-line message-header" id="messageHeader">hard, isn't it?</div>
+        <div class="message-line message-body" id="messageBody">
+            what's also hard is presbyopia, or tired eyes, an inevitable physiological process that affects almost everyone
+        </div>
+        <a href="https://qlosi.com/" target="_blank" rel="noopener noreferrer" class="message-line message-cta" id="messageCta">VISIT QLOSI TO LEARN MORE</a>
+    </div>
+    
+    <!-- Circle Trail Canvas -->
+    <canvas id="circleTrailCanvas"></canvas>
+
+    <!-- Gaze Pointer -->
+    <div class="gaze-pointer" id="gazePointer"></div>
+
+    <!-- Main App Container -->
+    <div class="app-container" id="appContainer">
+        <div class="tracking-container">
+            <video id="videoElement" autoplay playsinline></video>
+            <canvas id="canvasElement"></canvas>
+        </div>
+
+        <div class="dashboard" id="dashboard">
+            <div class="stat-group">
+                <div class="stat-label">blinks</div>
+                <div class="stat-value" id="blinkCount">0</div>
             </div>
 
-            <div class="stats-panel">
-                <div class="stat-item">
-                    <div class="stat-label">
-                        <span id="statusIndicator" class="status-indicator status-inactive"></span>
-                        Estado
-                    </div>
-                    <div class="stat-value" id="statusText">Inicializando...</div>
-                </div>
-
-                <div class="stat-item">
-                    <div class="stat-label">FPS</div>
-                    <div class="stat-value" id="fpsValue">0</div>
-                </div>
-
-                <div class="stat-item">
-                    <div class="stat-label">Parpadeos</div>
-                    <div class="stat-value" id="blinkCount">0</div>
-                </div>
-
-                <div class="stat-item">
-                    <div class="stat-label">EAR Promedio</div>
-                    <div class="stat-value" id="earValue">0.00</div>
-                </div>
-
-                <div class="stat-item">
-                    <div class="stat-label">Tamaño Pupila</div>
-                    <div class="stat-value" id="pupilSize">0</div>
-                </div>
-
-                <div class="stat-item">
-                    <div class="stat-label">Posición Mirada</div>
-                    <div class="stat-value" id="gazePosition">-</div>
-                </div>
-
-                <div class="gaze-indicator" id="gazeIndicator">
-                    <div class="gaze-point" id="gazePoint"></div>
-                </div>
-
+            <div class="stat-group">
+                <div class="stat-label">eye aspect ratio</div>
+                <div class="stat-value" id="earValue">0.000</div>
                 <div class="ear-chart">
                     <canvas id="earCanvas"></canvas>
                 </div>
             </div>
-        </div>
 
-        <div class="controls">
-            <button id="startBtn" onclick="startTracking()">▶️ Iniciar Tracking</button>
-            <button id="stopBtn" onclick="stopTracking()" disabled>⏸️ Detener</button>
-            <button onclick="takeScreenshot()">📸 Captura</button>
-            <button onclick="toggleDebug()">🔍 Debug</button>
-        </div>
+            <div class="stat-group">
+                <div class="stat-label">pupil diameter</div>
+                <div class="stat-value" id="pupilSize">0 px</div>
+            </div>
 
-        <div class="feature-list">
-            <div class="feature-item">
-                <div class="feature-icon">👁️</div>
-                <div class="feature-title">Tracking de Iris</div>
-            </div>
-            <div class="feature-item">
-                <div class="feature-icon">😑</div>
-                <div class="feature-title">Detección de Parpadeo</div>
-            </div>
-            <div class="feature-item">
-                <div class="feature-icon">📍</div>
-                <div class="feature-title">Estimación de Mirada</div>
-            </div>
-            <div class="feature-item">
-                <div class="feature-icon">📊</div>
-                <div class="feature-title">Métricas en Tiempo Real</div>
+            <div class="stat-group">
+                <div class="stat-label">frame rate</div>
+                <div class="stat-value" id="fpsValue">0 fps</div>
             </div>
         </div>
     </div>
@@ -356,5 +430,26 @@
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
     <script src="iris-tracker.js"></script>
+    <script>
+        // Request webcam permission as soon as the page loads
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                // Request webcam access
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: 1280, 
+                        height: 720 
+                    } 
+                });
+                
+                // Store the stream for later use
+                window.preloadedStream = stream;
+                console.log('Webcam permission granted and ready');
+            } catch (error) {
+                console.error('Error requesting webcam permission:', error);
+                alert('Please allow webcam access to use this application');
+            }
+        });
+    </script>
 </body>
 </html>

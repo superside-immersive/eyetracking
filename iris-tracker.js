@@ -12,7 +12,7 @@ class IrisTracker {
         
         // EAR Chart
         this.earCanvas = document.getElementById('earCanvas');
-        this.earCtx = this.earCanvas.getContext('2d');
+        this.earCtx = this.earCanvas ? this.earCanvas.getContext('2d') : null;
         
         // Iris landmarks (refined landmarks)
         this.LEFT_IRIS = [469, 470, 471, 472];
@@ -50,6 +50,27 @@ class IrisTracker {
         // Pupil size tracking
         this.pupilSizeHistory = [];
         this.maxPupilHistory = 30;
+        
+        // Exercise phases
+        this.currentPhase = 0; // 0: look left, 1: look right, 2: make circle, 3: final message
+        this.phaseCompleted = [false, false, false, false];
+        this.circleStartTime = null;
+        
+        // Left gaze detection (INVERTED: higher value = looking left)
+        this.leftGazeThreshold = 0.65;
+        this.leftGazeFrames = 0;
+        this.leftGazeRequired = 10;
+        
+        // Right gaze detection (INVERTED: lower value = looking right)
+        this.rightGazeThreshold = 0.35;
+        this.rightGazeFrames = 0;
+        this.rightGazeRequired = 10;
+        
+        // Circle trail
+        this.circleTrailEnabled = false;
+        this.trailCanvas = null;
+        this.trailCtx = null;
+        this.lastTrailPoint = null;
     }
 
     async init() {
@@ -93,14 +114,21 @@ class IrisTracker {
         try {
             console.log('Starting camera...');
             
-            // Get camera stream
-            this.stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                    facingMode: 'user'
-                }
-            });
+            // Use preloaded stream if available, otherwise request new one
+            if (window.preloadedStream) {
+                console.log('Using preloaded webcam stream');
+                this.stream = window.preloadedStream;
+                window.preloadedStream = null; // Clear it so it's not reused
+            } else {
+                console.log('Requesting new webcam stream');
+                this.stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        facingMode: 'user'
+                    }
+                });
+            }
 
             this.videoElement.srcObject = this.stream;
             await this.videoElement.play();
@@ -109,8 +137,6 @@ class IrisTracker {
             
             this.isRunning = true;
             this.updateStatus('Tracking activo', true);
-            document.getElementById('startBtn').disabled = true;
-            document.getElementById('stopBtn').disabled = false;
             
             // Start processing loop
             this.processFrame();
@@ -148,8 +174,6 @@ class IrisTracker {
         }
         
         this.updateStatus('Detenido', false);
-        document.getElementById('startBtn').disabled = false;
-        document.getElementById('stopBtn').disabled = true;
     }
 
     onResults(results) {
@@ -161,11 +185,18 @@ class IrisTracker {
             this.ctx = this.canvasElement.getContext('2d');
         }
         
-        this.canvasElement.width = this.videoElement.videoWidth;
-        this.canvasElement.height = this.videoElement.videoHeight;
+        // Set canvas dimensions to match video
+        const videoWidth = this.videoElement.videoWidth;
+        const videoHeight = this.videoElement.videoHeight;
         
-        if (!this.canvasElement.width || !this.canvasElement.height) {
+        if (!videoWidth || !videoHeight) {
             return; // Video not ready yet
+        }
+        
+        // Only resize if needed
+        if (this.canvasElement.width !== videoWidth || this.canvasElement.height !== videoHeight) {
+            this.canvasElement.width = videoWidth;
+            this.canvasElement.height = videoHeight;
         }
         
         this.ctx.save();
@@ -177,17 +208,9 @@ class IrisTracker {
             // Process eye tracking
             this.processEyeTracking(landmarks);
             
-            // Draw visualizations
-            if (this.debugMode) {
-                this.drawAllLandmarks(landmarks);
-            }
+            // Draw only eye outlines and iris
             this.drawEyeAnnotations(landmarks);
             this.drawIrisTracking(landmarks);
-        } else {
-            // No face detected
-            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-            this.ctx.font = '20px Arial';
-            this.ctx.fillText('No se detectó rostro', 20, 40);
         }
 
         this.ctx.restore();
@@ -233,10 +256,17 @@ class IrisTracker {
         const rightGaze = this.calculateGazeRatio(rightIris, rightEye, width, height);
         const gazePoint = this.estimateGazePoint(leftGaze, rightGaze);
 
-        // Update gaze display
+        // Detect gaze based on current phase
+        this.detectLeftGaze(gazePoint);
+        this.detectRightGaze(gazePoint);
+        
+        // Draw circle trail if enabled
+        if (this.circleTrailEnabled) {
+            this.addTrailPoint(gazePoint);
+        }
+
+        // Update gaze pointer
         this.updateGazeIndicator(gazePoint);
-        document.getElementById('gazePosition').textContent = 
-            `${gazePoint.x}, ${gazePoint.y}`;
 
         // Calculate pupil size
         const leftPupilSize = this.calculatePupilSize(leftIris, width, height);
@@ -359,51 +389,65 @@ class IrisTracker {
         const width = this.canvasElement.width;
         const height = this.canvasElement.height;
 
-        // Draw left eye contour
-        this.drawLandmarkContour(landmarks, this.LEFT_EYE, '#00FF00', width, height);
+        // Draw left eye contour with thicker line
+        this.drawLandmarkContour(landmarks, this.LEFT_EYE, '#FFFFFF', width, height, 4);
 
-        // Draw right eye contour
-        this.drawLandmarkContour(landmarks, this.RIGHT_EYE, '#00FF00', width, height);
+        // Draw right eye contour with thicker line
+        this.drawLandmarkContour(landmarks, this.RIGHT_EYE, '#FFFFFF', width, height, 4);
     }
 
     drawIrisTracking(landmarks) {
         const width = this.canvasElement.width;
         const height = this.canvasElement.height;
 
-        // Draw iris points
-        [...this.LEFT_IRIS, ...this.RIGHT_IRIS].forEach(idx => {
-            const lm = landmarks[idx];
-            this.ctx.beginPath();
-            this.ctx.arc(lm.x * width, lm.y * height, 2, 0, 2 * Math.PI);
-            this.ctx.fillStyle = '#FF00FF';
-            this.ctx.fill();
-        });
+        // Get eye landmarks to check if eyes are open
+        const leftEye = this.LEFT_EYE.map(idx => landmarks[idx]);
+        const rightEye = this.RIGHT_EYE.map(idx => landmarks[idx]);
 
-        // Draw iris centers with crosshair
+        // Calculate EAR for each eye
+        const earLeft = this.calculateEAR(leftEye, width, height);
+        const earRight = this.calculateEAR(rightEye, width, height);
+
+        // Get iris landmarks
         const leftIris = this.LEFT_IRIS.map(idx => landmarks[idx]);
         const rightIris = this.RIGHT_IRIS.map(idx => landmarks[idx]);
 
         const leftCenter = this.getCenter(leftIris, width, height);
         const rightCenter = this.getCenter(rightIris, width, height);
 
-        this.drawCrosshair(leftCenter.x, leftCenter.y, '#FF0000', 8);
-        this.drawCrosshair(rightCenter.x, rightCenter.y, '#FF0000', 8);
-
-        // Draw iris circles
+        // Calculate iris sizes
         const leftRadius = this.calculatePupilSize(leftIris, width, height) / 2;
         const rightRadius = this.calculatePupilSize(rightIris, width, height) / 2;
 
-        this.ctx.beginPath();
-        this.ctx.arc(leftCenter.x, leftCenter.y, leftRadius, 0, 2 * Math.PI);
-        this.ctx.strokeStyle = '#00FFFF';
-        this.ctx.lineWidth = 2;
-        this.ctx.stroke();
+        // Only draw left iris if eye is open (EAR above threshold)
+        if (earLeft > this.EAR_THRESHOLD) {
+            this.ctx.beginPath();
+            this.ctx.arc(leftCenter.x, leftCenter.y, leftRadius, 0, 2 * Math.PI);
+            this.ctx.strokeStyle = '#FFFFFF';
+            this.ctx.lineWidth = 3;
+            this.ctx.stroke();
 
-        this.ctx.beginPath();
-        this.ctx.arc(rightCenter.x, rightCenter.y, rightRadius, 0, 2 * Math.PI);
-        this.ctx.strokeStyle = '#00FFFF';
-        this.ctx.lineWidth = 2;
-        this.ctx.stroke();
+            // Draw center dot
+            this.ctx.beginPath();
+            this.ctx.arc(leftCenter.x, leftCenter.y, 5, 0, 2 * Math.PI);
+            this.ctx.fillStyle = '#FFFFFF';
+            this.ctx.fill();
+        }
+
+        // Only draw right iris if eye is open (EAR above threshold)
+        if (earRight > this.EAR_THRESHOLD) {
+            this.ctx.beginPath();
+            this.ctx.arc(rightCenter.x, rightCenter.y, rightRadius, 0, 2 * Math.PI);
+            this.ctx.strokeStyle = '#FFFFFF';
+            this.ctx.lineWidth = 3;
+            this.ctx.stroke();
+
+            // Draw center dot
+            this.ctx.beginPath();
+            this.ctx.arc(rightCenter.x, rightCenter.y, 5, 0, 2 * Math.PI);
+            this.ctx.fillStyle = '#FFFFFF';
+            this.ctx.fill();
+        }
     }
 
     drawAllLandmarks(landmarks) {
@@ -418,7 +462,7 @@ class IrisTracker {
         });
     }
 
-    drawLandmarkContour(landmarks, indices, color, width, height) {
+    drawLandmarkContour(landmarks, indices, color, width, height, lineWidth = 2) {
         this.ctx.beginPath();
         indices.forEach((idx, i) => {
             const lm = landmarks[idx];
@@ -432,7 +476,7 @@ class IrisTracker {
         });
         this.ctx.closePath();
         this.ctx.strokeStyle = color;
-        this.ctx.lineWidth = 2;
+        this.ctx.lineWidth = lineWidth;
         this.ctx.stroke();
     }
 
@@ -453,34 +497,253 @@ class IrisTracker {
         this.ctx.stroke();
     }
 
+    detectLeftGaze(gazePoint) {
+        // Only detect in phase 0
+        if (this.currentPhase !== 0 || this.phaseCompleted[0]) return;
+        
+        // Check if user is looking to the left (INVERTED: higher H = left)
+        if (gazePoint.h > this.leftGazeThreshold) {
+            this.leftGazeFrames++;
+            
+            // Trigger flash after sustained left gaze
+            if (this.leftGazeFrames >= this.leftGazeRequired) {
+                this.triggerFlash();
+                this.phaseCompleted[0] = true;
+                this.leftGazeFrames = 0;
+                
+                // Move to next phase immediately
+                this.advanceToPhase(1);
+            }
+        } else {
+            if (this.leftGazeFrames > 0) {
+                this.leftGazeFrames = Math.max(0, this.leftGazeFrames - 2);
+            }
+        }
+    }
+    
+    detectRightGaze(gazePoint) {
+        // Only detect in phase 1
+        if (this.currentPhase !== 1 || this.phaseCompleted[1]) return;
+        
+        // Check if user is looking to the right (INVERTED: lower H = right)
+        if (gazePoint.h < this.rightGazeThreshold) {
+            this.rightGazeFrames++;
+            
+            // Trigger flash after sustained right gaze
+            if (this.rightGazeFrames >= this.rightGazeRequired) {
+                this.triggerFlash();
+                this.phaseCompleted[1] = true;
+                this.rightGazeFrames = 0;
+                
+                // Move to next phase immediately
+                this.advanceToPhase(2);
+            }
+        } else {
+            if (this.rightGazeFrames > 0) {
+                this.rightGazeFrames = Math.max(0, this.rightGazeFrames - 2);
+            }
+        }
+    }
+    
+    advanceToPhase(phase) {
+        this.currentPhase = phase;
+        const instructionsOverlay = document.getElementById('instructionsOverlay');
+        const instructionText = document.getElementById('instructionText');
+        const instructionAction = document.getElementById('instructionAction');
+        
+        if (!instructionsOverlay || !instructionText) return;
+        
+        // Show instructions overlay
+        instructionsOverlay.classList.add('visible');
+        
+        if (phase === 1) {
+            // Set both texts immediately but hide the action text
+            instructionText.textContent = 'GOOD';
+            instructionAction.textContent = 'NOW LOOK RIGHT';
+            instructionAction.style.opacity = '0';
+            
+            // Step 2: After 2 seconds, fade in the action text
+            setTimeout(() => {
+                instructionAction.style.transition = 'opacity 0.5s ease-in';
+                instructionAction.style.opacity = '1';
+            }, 2000);
+            
+            // Step 3: Hide after 5 seconds total
+            setTimeout(() => {
+                instructionsOverlay.classList.remove('visible');
+                // Reset for next use
+                instructionAction.style.opacity = '1';
+            }, 5000);
+            
+        } else if (phase === 2) {
+            // Set both texts immediately but hide the action text
+            instructionText.textContent = 'PERFECT';
+            instructionAction.textContent = 'NOW DRAW A CIRCLE';
+            instructionAction.style.opacity = '0';
+            
+            // Initialize canvas but don't enable trail yet
+            this.initTrailCanvas();
+            this.circleStartTime = Date.now();
+            
+            // Step 2: After 2 seconds, fade in the action text
+            setTimeout(() => {
+                instructionAction.style.transition = 'opacity 0.5s ease-in';
+                instructionAction.style.opacity = '1';
+            }, 2000);
+            
+            // Step 3: Hide after 6 seconds total
+            setTimeout(() => {
+                instructionsOverlay.classList.remove('visible');
+                // Reset for next use
+                instructionAction.style.opacity = '1';
+            }, 6000);
+            
+            // Enable circle trail AFTER instruction disappears
+            setTimeout(() => {
+                this.circleTrailEnabled = true;
+                console.log('Circle drawing enabled!');
+            }, 6000);
+            
+            // After 16 seconds total (6s instruction + 10s drawing), show final message
+            setTimeout(() => {
+                this.showFinalMessage();
+            }, 16000);
+        }
+    }
+    
+    showFinalMessage() {
+        this.currentPhase = 3;
+        // Keep circle trail enabled so it continues drawing in background
+        // this.circleTrailEnabled = false; // Commented out to keep drawing
+        
+        const finalMessage = document.getElementById('finalMessage');
+        const messageHeader = document.getElementById('messageHeader');
+        const messageBody = document.getElementById('messageBody');
+        const messageCta = document.getElementById('messageCta');
+        
+        if (!finalMessage) return;
+        
+        // Show overlay
+        finalMessage.classList.add('visible');
+        
+        // Step 1: Show "hard, isn't it?" first
+        setTimeout(() => {
+            if (messageHeader) messageHeader.classList.add('visible');
+        }, 800);
+        
+        // Step 2: Show the presbyopia message after header is visible
+        setTimeout(() => {
+            if (messageBody) messageBody.classList.add('visible');
+        }, 3500);
+        
+        // Step 3: Show the CTA button much later (give more time to read)
+        setTimeout(() => {
+            if (messageCta) {
+                messageCta.classList.add('visible');
+            }
+        }, 10000);
+    }
+
+    triggerFlash() {
+        const flashOverlay = document.getElementById('flashOverlay');
+        if (!flashOverlay) return;
+        
+        // Trigger flash animation (more intense)
+        flashOverlay.classList.add('active');
+        
+        // Remove after animation
+        setTimeout(() => {
+            flashOverlay.classList.remove('active');
+        }, 200);
+        
+        console.log('Flash triggered!');
+    }
+    
+    initTrailCanvas() {
+        this.trailCanvas = document.getElementById('circleTrailCanvas');
+        if (!this.trailCanvas) return;
+        
+        this.trailCanvas.width = window.innerWidth;
+        this.trailCanvas.height = window.innerHeight;
+        this.trailCtx = this.trailCanvas.getContext('2d');
+        
+        // Set line style
+        this.trailCtx.strokeStyle = 'rgba(100, 180, 255, 0.7)';
+        this.trailCtx.lineWidth = 3;
+        this.trailCtx.lineCap = 'round';
+        this.trailCtx.lineJoin = 'round';
+        
+        console.log('Trail canvas initialized');
+    }
+    
+    addTrailPoint(gazePoint) {
+        if (!this.trailCtx) return;
+        
+        const currentPoint = { x: gazePoint.x, y: gazePoint.y };
+        
+        if (this.lastTrailPoint) {
+            // Draw line from last point to current point
+            this.trailCtx.beginPath();
+            this.trailCtx.moveTo(this.lastTrailPoint.x, this.lastTrailPoint.y);
+            this.trailCtx.lineTo(currentPoint.x, currentPoint.y);
+            this.trailCtx.stroke();
+        }
+        
+        this.lastTrailPoint = currentPoint;
+    }
+
     updateGazeIndicator(gazePoint) {
-        const indicator = document.getElementById('gazeIndicator');
-        const point = document.getElementById('gazePoint');
+        const pointer = document.getElementById('gazePointer');
+        if (!pointer) return;
         
-        const rect = indicator.getBoundingClientRect();
-        const x = gazePoint.h * rect.width;
-        const y = gazePoint.v * rect.height;
+        // Make pointer visible after app starts
+        if (!pointer.classList.contains('visible')) {
+            pointer.classList.add('visible');
+        }
         
-        point.style.left = `${Math.max(0, Math.min(x, rect.width))}px`;
-        point.style.top = `${Math.max(0, Math.min(y, rect.height))}px`;
+        // Map gaze to screen coordinates
+        const screenX = gazePoint.x;
+        const screenY = gazePoint.y;
+        
+        // Update pointer position
+        pointer.style.left = `${screenX}px`;
+        pointer.style.top = `${screenY}px`;
     }
 
     updateEARChart() {
+        // Lazy initialization of EAR canvas
+        if (!this.earCanvas) {
+            this.earCanvas = document.getElementById('earCanvas');
+        }
+        if (!this.earCtx && this.earCanvas) {
+            this.earCtx = this.earCanvas.getContext('2d');
+        }
+        
         const canvas = this.earCanvas;
         const ctx = this.earCtx;
         
-        canvas.width = canvas.offsetWidth;
-        canvas.height = canvas.offsetHeight;
+        if (!canvas || !ctx) return;
         
+        // Get the display size of the canvas
+        const displayWidth = canvas.offsetWidth || canvas.clientWidth || 260;
+        const displayHeight = canvas.offsetHeight || canvas.clientHeight || 80;
+        
+        // Set canvas resolution
+        if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+            canvas.width = displayWidth;
+            canvas.height = displayHeight;
+        }
+        
+        // Clear canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         
         if (this.earHistory.length < 2) return;
         
-        // Draw threshold line
+        // Draw threshold line (subtle)
         const thresholdY = canvas.height - (this.EAR_THRESHOLD * canvas.height / 0.4);
-        ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
         ctx.lineWidth = 1;
-        ctx.setLineDash([5, 5]);
+        ctx.setLineDash([4, 4]);
         ctx.beginPath();
         ctx.moveTo(0, thresholdY);
         ctx.lineTo(canvas.width, thresholdY);
@@ -488,13 +751,13 @@ class IrisTracker {
         ctx.setLineDash([]);
         
         // Draw EAR curve
-        ctx.strokeStyle = '#00FFFF';
+        ctx.strokeStyle = '#FFFFFF';
         ctx.lineWidth = 2;
         ctx.beginPath();
         
         this.earHistory.forEach((ear, i) => {
-            const x = (i / this.earHistory.length) * canvas.width;
-            const y = canvas.height - (ear * canvas.height / 0.4);
+            const x = (i / (this.earHistory.length - 1)) * canvas.width;
+            const y = canvas.height - (Math.min(ear, 0.4) * canvas.height / 0.4);
             
             if (i === 0) {
                 ctx.moveTo(x, y);
@@ -507,11 +770,7 @@ class IrisTracker {
     }
 
     showBlinkAlert() {
-        const alert = document.getElementById('blinkAlert');
-        alert.style.display = 'block';
-        setTimeout(() => {
-            alert.style.display = 'none';
-        }, 300);
+        // Silent blink detection - no alerts needed
     }
 
     updateFPS() {
@@ -528,15 +787,8 @@ class IrisTracker {
     }
 
     updateStatus(text, isActive) {
-        document.getElementById('statusText').textContent = text;
-        const indicator = document.getElementById('statusIndicator');
-        if (isActive) {
-            indicator.classList.add('status-active');
-            indicator.classList.remove('status-inactive');
-        } else {
-            indicator.classList.add('status-inactive');
-            indicator.classList.remove('status-active');
-        }
+        // Silent status updates - no UI changes needed
+        console.log(`Status: ${text} (${isActive ? 'active' : 'inactive'})`);
     }
 
     getCenter(landmarks, width, height) {
@@ -552,6 +804,7 @@ class IrisTracker {
 
 // Global tracker instance
 let tracker = null;
+let experienceStarted = false;
 
 // Initialize on page load
 window.addEventListener('load', async () => {
@@ -559,11 +812,88 @@ window.addEventListener('load', async () => {
     const initialized = await tracker.init();
     
     if (!initialized) {
-        alert('Error al inicializar MediaPipe. Verifica tu conexión a internet.');
+        alert('Error initializing MediaPipe. Check your internet connection.');
     }
 });
 
-// Control functions
+// Start experience with transitions
+async function startExperience() {
+    if (experienceStarted) return;
+    experienceStarted = true;
+    
+    // Fade out landing screen
+    const landingScreen = document.getElementById('landingScreen');
+    landingScreen.classList.add('fade-out');
+    
+    // Start tracking immediately
+    if (tracker) {
+        await tracker.start();
+    }
+    
+    // Fade in app container quickly
+    const appContainer = document.getElementById('appContainer');
+    setTimeout(() => {
+        appContainer.classList.add('visible');
+    }, 300);
+    
+    // Show dashboard after 1 second
+    setTimeout(() => {
+        const dashboard = document.getElementById('dashboard');
+        dashboard.classList.add('visible');
+    }, 1000);
+    
+    // Show gaze pointer after 1.5 seconds (after dashboard appears)
+    setTimeout(() => {
+        const pointer = document.getElementById('gazePointer');
+        if (pointer) {
+            pointer.classList.add('visible');
+        }
+    }, 1500);
+    
+    // Show "Let's start the exercises" after 6 seconds (4 seconds more to play with tracking)
+    setTimeout(() => {
+        const instructions = document.getElementById('instructionsOverlay');
+        const instructionText = document.getElementById('instructionText');
+        const instructionAction = document.getElementById('instructionAction');
+        
+        if (instructions && instructionText) {
+            instructionText.textContent = "LET'S START THE EXERCISES";
+            instructionAction.textContent = '';
+            instructions.classList.add('visible');
+        }
+    }, 6000);
+    
+    // Hide intro message after 3 more seconds
+    setTimeout(() => {
+        const instructions = document.getElementById('instructionsOverlay');
+        if (instructions) {
+            instructions.classList.remove('visible');
+        }
+    }, 9000);
+    
+    // Show first instruction "LOOK LEFT" after 9.5 seconds
+    setTimeout(() => {
+        const instructions = document.getElementById('instructionsOverlay');
+        const instructionText = document.getElementById('instructionText');
+        const instructionAction = document.getElementById('instructionAction');
+        
+        if (instructions && instructionText) {
+            instructionText.textContent = 'LOOK LEFT';
+            instructionAction.textContent = '';
+            instructions.classList.add('visible');
+        }
+    }, 9500);
+    
+    // Hide first instruction after total 13.5 seconds
+    setTimeout(() => {
+        const instructions = document.getElementById('instructionsOverlay');
+        if (instructions) {
+            instructions.classList.remove('visible');
+        }
+    }, 13500);
+}
+
+// Control functions (keeping for potential future use)
 async function startTracking() {
     if (tracker) {
         await tracker.start();
@@ -580,35 +910,4 @@ function toggleDebug() {
     if (tracker) {
         tracker.debugMode = !tracker.debugMode;
     }
-}
-
-function takeScreenshot() {
-    if (!tracker || !tracker.isRunning) {
-        alert('Inicia el tracking primero');
-        return;
-    }
-    
-    const canvas = document.getElementById('canvasElement');
-    const video = document.getElementById('videoElement');
-    
-    // Create a temporary canvas with video + overlay
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = canvas.width;
-    tempCanvas.height = canvas.height;
-    const tempCtx = tempCanvas.getContext('2d');
-    
-    // Draw video (flipped)
-    tempCtx.save();
-    tempCtx.scale(-1, 1);
-    tempCtx.drawImage(video, -tempCanvas.width, 0, tempCanvas.width, tempCanvas.height);
-    tempCtx.restore();
-    
-    // Draw overlay
-    tempCtx.drawImage(canvas, 0, 0);
-    
-    // Download
-    const link = document.createElement('a');
-    link.download = `iris-tracking-${Date.now()}.png`;
-    link.href = tempCanvas.toDataURL();
-    link.click();
 }
