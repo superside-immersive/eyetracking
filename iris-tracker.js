@@ -71,6 +71,9 @@ class IrisTracker {
         this.trailCanvas = null;
         this.trailCtx = null;
         this.lastTrailPoint = null;
+        
+        // Instruction timeout management
+        this.instructionTimeouts = [];
     }
 
     async init() {
@@ -510,9 +513,11 @@ class IrisTracker {
                 this.triggerFlash();
                 this.phaseCompleted[0] = true;
                 this.leftGazeFrames = 0;
-                
-                // Move to next phase immediately
-                this.advanceToPhase(1);
+
+                // Wait for flash to finish before advancing so the sequence is not overlapped
+                setTimeout(() => {
+                    this.advanceToPhase(1);
+                }, 300);
             }
         } else {
             if (this.leftGazeFrames > 0) {
@@ -534,9 +539,11 @@ class IrisTracker {
                 this.triggerFlash();
                 this.phaseCompleted[1] = true;
                 this.rightGazeFrames = 0;
-                
-                // Move to next phase immediately
-                this.advanceToPhase(2);
+
+                // Wait for flash to finish before advancing so the sequence is not overlapped
+                setTimeout(() => {
+                    this.advanceToPhase(2);
+                }, 300);
             }
         } else {
             if (this.rightGazeFrames > 0) {
@@ -551,63 +558,72 @@ class IrisTracker {
         const instructionText = document.getElementById('instructionText');
         const instructionAction = document.getElementById('instructionAction');
         
-        if (!instructionsOverlay || !instructionText) return;
+        if (!instructionsOverlay || !instructionText || !instructionAction) return;
         
-        // Show instructions overlay
-        instructionsOverlay.classList.add('visible');
+        // Clear action text
+        instructionAction.textContent = '';
+        instructionAction.classList.add('hidden');
         
         if (phase === 1) {
-            // Set both texts immediately but hide the action text
+            // Sequence: GOOD (fade in) → (fade out) → NOW LOOK RIGHT (fade in) → (fade out)
+            
+            // Step 1: Show "GOOD"
             instructionText.textContent = 'GOOD';
-            instructionAction.textContent = 'NOW LOOK RIGHT';
-            instructionAction.style.opacity = '0';
+            instructionsOverlay.classList.add('visible');
             
-            // Step 2: After 2 seconds, fade in the action text
-            setTimeout(() => {
-                instructionAction.style.transition = 'opacity 0.5s ease-in';
-                instructionAction.style.opacity = '1';
-            }, 2000);
-            
-            // Step 3: Hide after 5 seconds total
+            // Step 2: Fade out "GOOD" after 2 seconds
             setTimeout(() => {
                 instructionsOverlay.classList.remove('visible');
-                // Reset for next use
-                instructionAction.style.opacity = '1';
-            }, 5000);
+            }, 2000);
             
+            // Step 3: Change text while hidden, then fade in "NOW LOOK RIGHT" after 3 seconds
+            setTimeout(() => {
+                instructionText.textContent = 'NOW LOOK RIGHT';
+                instructionsOverlay.classList.add('visible');
+            }, 3000);
+            
+            // Step 4: Fade out "NOW LOOK RIGHT" after 6 seconds total
+            setTimeout(() => {
+                instructionsOverlay.classList.remove('visible');
+            }, 6000);
+
         } else if (phase === 2) {
-            // Set both texts immediately but hide the action text
-            instructionText.textContent = 'PERFECT';
-            instructionAction.textContent = 'NOW DRAW A CIRCLE';
-            instructionAction.style.opacity = '0';
+            // Sequence: PERFECT (fade in) → (fade out) → NOW DRAW A CIRCLE (fade in) → (fade out)
             
-            // Initialize canvas but don't enable trail yet
+            // Initialize trail canvas but don't enable drawing yet
             this.initTrailCanvas();
             this.circleStartTime = Date.now();
             
-            // Step 2: After 2 seconds, fade in the action text
-            setTimeout(() => {
-                instructionAction.style.transition = 'opacity 0.5s ease-in';
-                instructionAction.style.opacity = '1';
-            }, 2000);
+            // Step 1: Show "PERFECT"
+            instructionText.textContent = 'PERFECT';
+            instructionsOverlay.classList.add('visible');
             
-            // Step 3: Hide after 6 seconds total
+            // Step 2: Fade out "PERFECT" after 2 seconds
             setTimeout(() => {
                 instructionsOverlay.classList.remove('visible');
-                // Reset for next use
-                instructionAction.style.opacity = '1';
+            }, 2000);
+            
+            // Step 3: Change text while hidden, then fade in "NOW DRAW A CIRCLE" after 3 seconds
+            setTimeout(() => {
+                instructionText.textContent = 'NOW DRAW A CIRCLE';
+                instructionsOverlay.classList.add('visible');
+            }, 3000);
+            
+            // Step 4: Fade out "NOW DRAW A CIRCLE" after 6 seconds total
+            setTimeout(() => {
+                instructionsOverlay.classList.remove('visible');
             }, 6000);
             
-            // Enable circle trail AFTER instruction disappears
+            // Step 5: Enable circle trail after instructions disappear
             setTimeout(() => {
                 this.circleTrailEnabled = true;
                 console.log('Circle drawing enabled!');
-            }, 6000);
-            
-            // After 16 seconds total (6s instruction + 10s drawing), show final message
+            }, 6500);
+
+            // Step 6: Show final message after drawing time
             setTimeout(() => {
                 this.showFinalMessage();
-            }, 16000);
+            }, 16500);
         }
     }
     
@@ -623,25 +639,28 @@ class IrisTracker {
         
         if (!finalMessage) return;
         
-        // Show overlay
-        finalMessage.classList.add('visible');
+        // Wait a bit before showing anything to avoid overlap with previous instructions
+        setTimeout(() => {
+            // Show overlay
+            finalMessage.classList.add('visible');
+        }, 500);
         
-        // Step 1: Show "hard, isn't it?" first
+        // Step 1: Show "hard, isn't it?" first (after overlay appears)
         setTimeout(() => {
             if (messageHeader) messageHeader.classList.add('visible');
-        }, 800);
+        }, 1500);
         
         // Step 2: Show the presbyopia message after header is visible
         setTimeout(() => {
             if (messageBody) messageBody.classList.add('visible');
-        }, 3500);
+        }, 4500);
         
         // Step 3: Show the CTA button much later (give more time to read)
         setTimeout(() => {
             if (messageCta) {
                 messageCta.classList.add('visible');
             }
-        }, 10000);
+        }, 11000);
     }
 
     triggerFlash() {
