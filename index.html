@@ -130,13 +130,13 @@
             width: 20px;
             height: 20px;
             border-radius: 50%;
-            background: rgba(0, 120, 255, 0.6);
-            border: 2px solid rgba(0, 150, 255, 0.9);
+            background: rgba(76, 42, 133, 0.6);
+            border: 2px solid rgba(76, 42, 133, 0.9);
             pointer-events: none;
             z-index: 100;
             transform: translate(-50%, -50%);
             transition: all 0.1s ease-out;
-            box-shadow: 0 0 20px rgba(0, 120, 255, 0.8);
+            box-shadow: 0 0 20px rgba(76, 42, 133, 0.8);
             opacity: 0;
         }
 
@@ -288,43 +288,46 @@
             opacity: 1;
         }
 
-        .message-header {
-            font-size: 2.5em;
+        .message-1 {
+            font-size: 2.2em;
             font-weight: 300;
-            letter-spacing: 0.15em;
-            text-transform: lowercase;
+            letter-spacing: 0.1em;
+            line-height: 1.6;
+            max-width: 900px;
+            text-align: center;
             margin-bottom: 60px;
         }
 
-        .message-body {
-            font-size: 1.2em;
+        .message-2 {
+            font-size: 1.8em;
             font-weight: 300;
             letter-spacing: 0.08em;
-            line-height: 1.8;
-            max-width: 800px;
+            line-height: 1.7;
+            max-width: 950px;
             text-align: center;
-            margin-bottom: 50px;
+            margin-bottom: 60px;
         }
 
-        .message-cta {
-            font-size: 1em;
+        .message-3 {
+            font-size: 1.1em;
             font-weight: 400;
             letter-spacing: 0.2em;
             text-transform: uppercase;
             border: 1px solid rgba(255, 255, 255, 0.4);
-            padding: 15px 40px;
+            padding: 18px 50px;
             cursor: pointer;
             text-decoration: none;
             color: #fff;
             display: inline-block;
-            margin-top: 20px;
+            margin-top: 30px;
+            transition: all 0.3s ease;
         }
 
-        .message-cta.visible {
+        .message-3.visible {
             border-color: rgba(255, 255, 255, 0.6);
         }
 
-        .message-cta:hover {
+        .message-3:hover {
             border-color: #fff !important;
             background: rgba(255, 255, 255, 0.08);
         }
@@ -368,8 +371,8 @@
 <body>
     <!-- Landing Screen -->
     <div class="landing-screen" id="landingScreen">
-        <div class="landing-title">ready to train your eyes?</div>
-        <div class="landing-subtitle">eye gymnastics</div>
+        <div class="landing-title">Are your eyes ready to focus?</div>
+        <div class="landing-subtitle">Let's begin with the Qlosi challenge</div>
         <button class="start-button" onclick="startExperience()">click to start</button>
     </div>
 
@@ -384,11 +387,9 @@
     
     <!-- Final Message -->
     <div class="final-message" id="finalMessage">
-        <div class="message-line message-header" id="messageHeader">hard, isn't it?</div>
-        <div class="message-line message-body" id="messageBody">
-            what's also hard is presbyopia, or tired eyes, an inevitable physiological process that affects almost everyone
-        </div>
-        <a href="https://qlosi.com/" target="_blank" rel="noopener noreferrer" class="message-line message-cta" id="messageCta">VISIT QLOSI TO LEARN MORE</a>
+        <div class="message-line message-1" id="message1">Your eyes work hard to focus, sometimes they need a little help.</div>
+        <div class="message-line message-2" id="message2">Qlosi is the first and only FDA-approved eye drop for blurry near vision.</div>
+        <a href="https://qlosi.com/" target="_blank" rel="noopener noreferrer" class="message-line message-3" id="message3">Learn more.</a>
     </div>
     
     <!-- Circle Trail Canvas -->

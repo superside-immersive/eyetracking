@@ -74,6 +74,11 @@ class IrisTracker {
         
         // Instruction timeout management
         this.instructionTimeouts = [];
+        
+        // Eye outline opacity for fade-in effect
+        this.eyeOutlineOpacity = 0;
+        this.eyeOutlineTargetOpacity = 1;
+        this.eyeOutlineFadeSpeed = 0.005; // Much slower fade for smoother, more gradual effect
     }
 
     async init() {
@@ -367,8 +372,13 @@ class IrisTracker {
             avgV = this.gazeHistory.reduce((sum, g) => sum + g.v, 0) / this.gazeHistory.length;
         }
 
+        // Invert horizontal axis so looking left maps to left side of screen
+        // When avgH is high (looking left), we want low screenX (left side)
+        // When avgH is low (looking right), we want high screenX (right side)
+        const invertedH = 1 - avgH;
+        
         // Map to screen coordinates
-        const screenX = Math.round(avgH * this.screenWidth);
+        const screenX = Math.round(invertedH * this.screenWidth);
         const screenY = Math.round(avgV * this.screenHeight);
 
         return { x: screenX, y: screenY, h: avgH, v: avgV };
@@ -392,11 +402,19 @@ class IrisTracker {
         const width = this.canvasElement.width;
         const height = this.canvasElement.height;
 
-        // Draw left eye contour with thicker line
-        this.drawLandmarkContour(landmarks, this.LEFT_EYE, '#FFFFFF', width, height, 4);
+        // Gradually increase opacity for smooth fade-in
+        if (this.eyeOutlineOpacity < this.eyeOutlineTargetOpacity) {
+            this.eyeOutlineOpacity = Math.min(
+                this.eyeOutlineOpacity + this.eyeOutlineFadeSpeed,
+                this.eyeOutlineTargetOpacity
+            );
+        }
 
-        // Draw right eye contour with thicker line
-        this.drawLandmarkContour(landmarks, this.RIGHT_EYE, '#FFFFFF', width, height, 4);
+        // Draw left eye contour with thicker line and fade-in opacity
+        this.drawLandmarkContour(landmarks, this.LEFT_EYE, '#FFFFFF', width, height, 4, this.eyeOutlineOpacity);
+
+        // Draw right eye contour with thicker line and fade-in opacity
+        this.drawLandmarkContour(landmarks, this.RIGHT_EYE, '#FFFFFF', width, height, 4, this.eyeOutlineOpacity);
     }
 
     drawIrisTracking(landmarks) {
@@ -424,6 +442,9 @@ class IrisTracker {
 
         // Only draw left iris if eye is open (EAR above threshold)
         if (earLeft > this.EAR_THRESHOLD) {
+            // Apply fade-in opacity
+            this.ctx.globalAlpha = this.eyeOutlineOpacity;
+            
             this.ctx.beginPath();
             this.ctx.arc(leftCenter.x, leftCenter.y, leftRadius, 0, 2 * Math.PI);
             this.ctx.strokeStyle = '#FFFFFF';
@@ -435,10 +456,16 @@ class IrisTracker {
             this.ctx.arc(leftCenter.x, leftCenter.y, 5, 0, 2 * Math.PI);
             this.ctx.fillStyle = '#FFFFFF';
             this.ctx.fill();
+            
+            // Reset alpha
+            this.ctx.globalAlpha = 1;
         }
 
         // Only draw right iris if eye is open (EAR above threshold)
         if (earRight > this.EAR_THRESHOLD) {
+            // Apply fade-in opacity
+            this.ctx.globalAlpha = this.eyeOutlineOpacity;
+            
             this.ctx.beginPath();
             this.ctx.arc(rightCenter.x, rightCenter.y, rightRadius, 0, 2 * Math.PI);
             this.ctx.strokeStyle = '#FFFFFF';
@@ -450,6 +477,9 @@ class IrisTracker {
             this.ctx.arc(rightCenter.x, rightCenter.y, 5, 0, 2 * Math.PI);
             this.ctx.fillStyle = '#FFFFFF';
             this.ctx.fill();
+            
+            // Reset alpha
+            this.ctx.globalAlpha = 1;
         }
     }
 
@@ -465,7 +495,7 @@ class IrisTracker {
         });
     }
 
-    drawLandmarkContour(landmarks, indices, color, width, height, lineWidth = 2) {
+    drawLandmarkContour(landmarks, indices, color, width, height, lineWidth = 2, opacity = 1) {
         this.ctx.beginPath();
         indices.forEach((idx, i) => {
             const lm = landmarks[idx];
@@ -478,9 +508,13 @@ class IrisTracker {
             }
         });
         this.ctx.closePath();
+        
+        // Apply opacity to stroke style
+        this.ctx.globalAlpha = opacity;
         this.ctx.strokeStyle = color;
         this.ctx.lineWidth = lineWidth;
         this.ctx.stroke();
+        this.ctx.globalAlpha = 1; // Reset to default
     }
 
     drawCrosshair(x, y, color, size) {
@@ -633,9 +667,9 @@ class IrisTracker {
         // this.circleTrailEnabled = false; // Commented out to keep drawing
         
         const finalMessage = document.getElementById('finalMessage');
-        const messageHeader = document.getElementById('messageHeader');
-        const messageBody = document.getElementById('messageBody');
-        const messageCta = document.getElementById('messageCta');
+        const message1 = document.getElementById('message1');
+        const message2 = document.getElementById('message2');
+        const message3 = document.getElementById('message3');
         
         if (!finalMessage) return;
         
@@ -645,20 +679,20 @@ class IrisTracker {
             finalMessage.classList.add('visible');
         }, 500);
         
-        // Step 1: Show "hard, isn't it?" first (after overlay appears)
+        // Step 1: Show first message
         setTimeout(() => {
-            if (messageHeader) messageHeader.classList.add('visible');
+            if (message1) message1.classList.add('visible');
         }, 1500);
         
-        // Step 2: Show the presbyopia message after header is visible
+        // Step 2: Show second message after first is visible
         setTimeout(() => {
-            if (messageBody) messageBody.classList.add('visible');
+            if (message2) message2.classList.add('visible');
         }, 4500);
         
-        // Step 3: Show the CTA button much later (give more time to read)
+        // Step 3: Show third message much later (give more time to read)
         setTimeout(() => {
-            if (messageCta) {
-                messageCta.classList.add('visible');
+            if (message3) {
+                message3.classList.add('visible');
             }
         }, 11000);
     }
@@ -686,8 +720,8 @@ class IrisTracker {
         this.trailCanvas.height = window.innerHeight;
         this.trailCtx = this.trailCanvas.getContext('2d');
         
-        // Set line style
-        this.trailCtx.strokeStyle = 'rgba(100, 180, 255, 0.7)';
+        // Set line style with Qlosi purple color
+        this.trailCtx.strokeStyle = 'rgba(76, 42, 133, 0.7)';
         this.trailCtx.lineWidth = 3;
         this.trailCtx.lineCap = 'round';
         this.trailCtx.lineJoin = 'round';
